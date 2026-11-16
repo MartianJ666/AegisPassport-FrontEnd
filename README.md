@@ -24,7 +24,18 @@ npm run dev -- --host 127.0.0.1
 
 打开 <http://localhost:8420>。开发服务器默认把 API、OAuth 和上传请求代理到 `http://localhost:8421`。
 
-首次管理员账号由后端初始化。自助注册默认开放，但需要先在“邮件配置”中启用 SMTP，才能发送注册验证码。
+### 管理员初始账号
+
+| 项目 | 默认值 |
+| --- | --- |
+| 用户名 | `admin` |
+| 初始密码 | 后端首次初始化时随机生成的 20 位密码，启动日志中会显示一次 |
+
+查看后端启动日志中的 `username:`、`password:` 两行即可获取初始账号。使用容器部署时，可运行 `docker logs server` 查看。若启动前设置了 `BOOTSTRAP_ADMIN_PASSWORD`，请使用自己设置的密码。
+
+指定初始密码的启动示例见[后端 README](https://github.com/MartianJ666/AegisPassport-BackEnd#管理员初始账号)。
+
+自助注册默认开放，但需要先在“邮件配置”中启用 SMTP，才能发送注册验证码。
 
 ## 环境变量
 
