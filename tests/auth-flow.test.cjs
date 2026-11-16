@@ -1,0 +1,27 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const values=new Map();let now=1000000;
+const location={origin:'https://auth.example.com',hostname:'auth.example.com',assign(value){this.href=value}};
+const sessionStorage={getItem:k=>values.get(k)||null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};
+const ctx=vm.createContext({window:{location},sessionStorage,URL,URLSearchParams,Date:{now:()=>now},Number,JSON});
+vm.runInContext(fs.readFileSync('src/utils/url.js','utf8').replace(/import\.meta\.env/g,'({})').replace(/export /g,''),ctx);
+vm.runInContext(fs.readFileSync('src/utils/loginContinuation.js','utf8').replace(/^import .*$/gm,'').replace(/import\.meta\.env/g,'({})').replace(/export /g,''),ctx);
+const target='https://auth.example.com/oauth2/authorize?state=a%2Bb&code_challenge=unchanged';
+ctx.rememberExternalContinuation(target);assert.equal(ctx.externalContinuation(),target);assert.equal(ctx.externalContinuation(true),target);assert.equal(ctx.externalContinuation(),null);
+ctx.rememberExternalContinuation(target);now+=300001;assert.equal(ctx.externalContinuation(),null);
+ctx.rememberExternalContinuation('https://evil.invalid');assert.equal(ctx.externalContinuation(),null);
+values.set('passport.external-continuation',JSON.stringify({target}));assert.equal(ctx.externalContinuation(),null);
+let guard;ctx.router={beforeEach(fn){guard=fn}};const auth={loaded:true,isAuthenticated:true,needsSetup:false};ctx.useAuthStore=()=>auth;
+const router=fs.readFileSync('src/router/index.js','utf8');vm.runInContext(router.slice(router.indexOf('router.beforeEach('),router.lastIndexOf('export default router')),ctx);
+(async()=>{
+ ctx.rememberExternalContinuation(target);
+ auth.needsSetup=true;
+ const setup=await guard({name:'login',meta:{public:true},query:{external:'complete'}});
+ assert.equal(setup.name,'complete-external');assert.equal(setup.query.redirect,target);assert.equal(ctx.externalContinuation(),target);
+ auth.needsSetup=false;
+ assert.equal(await guard({name:'login',meta:{public:true},query:{external:'complete'}}),false);assert.equal(location.href,target);assert.equal(ctx.externalContinuation(),null);
+ ctx.rememberExternalContinuation(target);assert.equal(await guard({name:'home',meta:{},query:{}}),true);assert.equal(ctx.externalContinuation(),target);
+ const consent=vm.createContext({computed:fn=>({get value(){return fn()}}),ref:v=>({value:v}),useRoute:()=>({query:{denied:'1'}}),onMounted(){},onBeforeUnmount(){}});
+ vm.runInContext(fs.readFileSync('src/views/auth/ConsentView.vue','utf8').split('<script setup>')[1].split('</script>')[0].replace(/^import .*$/gm,''),consent);
+ await consent.load();assert.equal(vm.runInContext('status.value',consent),'denied');
+ console.log('PASS external callback resumes original OAuth; setup preserves continuation; expired/malformed/foreign targets rejected; regular home never hijacked; denied route has correct state');
+})().catch(error=>{console.error(error);process.exitCode=1});
